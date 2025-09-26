@@ -2,57 +2,131 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Baby Black Hole</title>
+  <title>Relativistic Black Hole Shader Demo</title>
   <style>
     body { margin: 0; background: black; overflow: hidden; }
     canvas { display: block; }
   </style>
 </head>
 <body>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
-  <script>
-    // Scene setup
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({antialias: true});
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+<script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+<script id="vertexShader" type="x-shader/x-vertex">
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+}
+</script>
 
-    // Create "black hole" (just a black sphere for now)
-    const blackHoleGeometry = new THREE.SphereGeometry(1, 64, 64);
-    const blackHoleMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    const blackHole = new THREE.Mesh(blackHoleGeometry, blackHoleMaterial);
-    scene.add(blackHole);
+<script id="fragmentShader" type="x-shader/x-fragment">
+precision highp float;
+varying vec2 vUv;
 
-    // Add some "stars"
-    const starGeometry = new THREE.BufferGeometry();
-    const starCount = 1000;
-    const starPositions = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount * 3; i++) {
-      starPositions[i] = (Math.random() - 0.5) * 100;
+// Utility: HSV to RGB for disk color
+vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1., 2./3., 1./3., 3.);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6. - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, .0, 1.), c.y);
+}
+
+// Black hole / accretion disk parameters
+const float BH_RADIUS = 0.22;     // Event horizon
+const float DISK_INNER = 0.26;
+const float DISK_OUTER = 0.48;
+const float DISK_HEIGHT = 0.045;  // Thickness of accretion disk
+
+uniform float uTime;
+uniform vec2 uResolution;
+
+void main() {
+    float aspect = uResolution.x / uResolution.y;
+    // Coordinates, centered
+    vec2 uv = (vUv - 0.5) * vec2(aspect,1.0) * 2.2;
+    float r = length(uv);
+    float phi = atan(uv.y, uv.x);
+
+    // Starfield background (simplified)
+    float star = 0.0;
+    float sR = r * 1.3 + 0.2 * sin(phi * 8. + uTime * 0.1);
+    float sA = mod(phi * 6.0 + uTime * 0.08, 6.2831);
+    for(int i=0; i<7; i++) {
+        float f = float(i) * 0.92 + 0.25;
+        float rad = 0.7 + 0.35 * sin(uTime*0.14 + float(i)*0.6);
+        float ang = uTime*0.07 + float(i)*1.1;
+        float dx = sR - rad;
+        float da = abs(sA - ang);
+        star += 0.002/(dx*dx + 0.04) * 0.8/(da*da + 0.04);
     }
-    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.2 });
-    const stars = new THREE.Points(starGeometry, starMaterial);
-    scene.add(stars);
 
-    // Camera positioning
-    camera.position.z = 5;
+    // Gravitational lensing effect: compress vertical direction near the center
+    // (not full raytracing, but mimics light bending)
+    float lens = pow(BH_RADIUS / max(r,BH_RADIUS), 2.0);
 
-    // Animation loop
-    function animate() {
-      requestAnimationFrame(animate);
-      blackHole.rotation.y += 0.002; // slow spin for dramatic effect
-      renderer.render(scene, camera);
+    // Accretion disk: warped by lensing
+    float diskCol = 0.0;
+    float diskY = (uv.y) / (1.0 + 2.5*lens); // Strong lensing near BH
+    float diskHeight = DISK_HEIGHT * (1.0 + 2.6*lens);
+    if (abs(diskY) < diskHeight && r > DISK_INNER && r < DISK_OUTER) {
+        float frac = (r - DISK_INNER) / (DISK_OUTER - DISK_INNER);
+        diskCol = 1.0 - 0.6*frac;
     }
-    animate();
 
-    // Responsive canvas
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-  </script>
+    // Disk color (orange/yellow inner, redder outer)
+    vec3 diskColor = hsv2rgb(vec3(0.09 + 0.11 * (r-DISK_INNER)/(DISK_OUTER-DISK_INNER), 0.8, diskCol));
+    // Doppler boosting: one side is blue-shifted, the other red-shifted
+    float doppler = 0.7 + 0.6 * cos(phi - uTime*0.6);
+    diskColor *= 0.8 + 0.5*doppler;
+
+    // Black hole shadow (event horizon)
+    float bhAlpha = smoothstep(BH_RADIUS, BH_RADIUS*0.994, r);
+
+    // Final color: combine disk, shadow, and star background
+    vec3 color = vec3(0.04,0.04,0.07); // space
+    color += 0.9*star*vec3(1.0,1.0,1.0);
+    color = mix(color, diskColor, diskCol);
+    color = mix(vec3(0,0,0), color, bhAlpha);
+
+    gl_FragColor = vec4(color,1.0);
+}
+</script>
+
+<script>
+const width = window.innerWidth;
+const height = window.innerHeight;
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+const geometry = new THREE.PlaneGeometry(2,2);
+
+const uniforms = {
+  uTime: { value: 0.0 },
+  uResolution: { value: new THREE.Vector2(width, height) }
+};
+
+const material = new THREE.ShaderMaterial({
+  vertexShader: document.getElementById("vertexShader").textContent,
+  fragmentShader: document.getElementById("fragmentShader").textContent,
+  uniforms: uniforms
+});
+
+const mesh = new THREE.Mesh(geometry, material);
+scene.add(mesh);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(width, height);
+document.body.appendChild(renderer.domElement);
+
+function animate() {
+  requestAnimationFrame(animate);
+  uniforms.uTime.value += 0.016;
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  renderer.setSize(w, h);
+  uniforms.uResolution.value.set(w, h);
+});
+</script>
 </body>
 </html>
