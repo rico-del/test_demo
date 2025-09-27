@@ -88,45 +88,6 @@ void main() {
 
     gl_FragColor = vec4(color,1.0);
 }
-</script>
-
-<script>
-const width = window.innerWidth;
-const height = window.innerHeight;
-const scene = new THREE.Scene();
-const camera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
-const geometry = new THREE.PlaneGeometry(2,2);
-
-const uniforms = {
-  uTime: { value: 0.0 },
-  uResolution: { value: new THREE.Vector2(width, height) }
-};
-
-const material = new THREE.ShaderMaterial({
-  vertexShader: document.getElementById("vertexShader").textContent,
-  fragmentShader: document.getElementById("fragmentShader").textContent,
-  uniforms: uniforms
-});
-
-const mesh = new THREE.Mesh(geometry, material);
-scene.add(mesh);
-
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(width, height);
-document.body.appendChild(renderer.domElement);
-
-function animate() {
-  requestAnimationFrame(animate);
-  uniforms.uTime.value += 0.016;
-  renderer.render(scene, camera);
-}
-animate();
-
-window.addEventListener('resize', () => {
-  const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h);
-  uniforms.uResolution.value.set(w, h);
-});
-</script>
+<script src="app.js"><script>
 </body>
 </html>
